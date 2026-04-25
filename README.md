@@ -46,7 +46,6 @@ fl_privacy/
 │   └── data_loader.py            # Breast Cancer Wisconsin dataset loader
 │
 ├── data/
-│   └── diabetes.csv              # Dataset file
 │
 ├── experiments/                  # Auto-created — stores saved models and results
 │   ├── target_model.pt
