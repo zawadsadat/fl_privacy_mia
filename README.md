@@ -46,6 +46,7 @@ fl_privacy/
 │   └── data_loader.py            # Breast Cancer Wisconsin dataset loader
 │
 ├── data/
+│   └── (dataset loaded automatically via scikit-learn)
 │
 ├── experiments/                  # Auto-created — stores saved models and results
 │   ├── target_model.pt
