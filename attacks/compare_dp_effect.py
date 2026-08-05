@@ -1,3 +1,8 @@
+"""
+Usage:
+    python attacks/compare_dp_effect.py
+"""
+
 import sys
 import os
 
@@ -11,7 +16,6 @@ from sklearn.ensemble import RandomForestClassifier
 
 
 def load_and_evaluate(suffix, label):
-    
     feat_path = f"experiments/attack_features{suffix}.npy"
     label_path = f"experiments/attack_labels{suffix}.npy"
 
@@ -22,7 +26,6 @@ def load_and_evaluate(suffix, label):
     X = np.load(feat_path)
     y = np.load(label_path)
 
-    # Balance
     member_idx = np.where(y == 1)[0]
     nonmember_idx = np.where(y == 0)[0]
     min_size = min(len(member_idx), len(nonmember_idx))
@@ -40,7 +43,6 @@ def load_and_evaluate(suffix, label):
         X_bal, y_bal, test_size=0.3, random_state=42, stratify=y_bal
     )
 
-    # Random Forest (best performer)
     rf = RandomForestClassifier(
         n_estimators=200, max_depth=5,
         random_state=42, class_weight='balanced'
@@ -58,16 +60,12 @@ def load_and_evaluate(suffix, label):
         idx = np.argmin(np.abs(fpr - target_fpr))
         tpr_at[target_fpr] = tpr[idx]
 
-    # Feature distribution gap
     member_mask = y == 1
     loss_gap = abs(X[member_mask][:, 2].mean() - X[~member_mask][:, 2].mean())
 
     return {
-        "accuracy": acc,
-        "auc": auc,
-        "tpr_1": tpr_at[0.01],
-        "tpr_5": tpr_at[0.05],
-        "tpr_10": tpr_at[0.10],
+        "accuracy": acc, "auc": auc,
+        "tpr_1": tpr_at[0.01], "tpr_5": tpr_at[0.05], "tpr_10": tpr_at[0.10],
         "loss_gap": loss_gap,
     }
 
@@ -90,14 +88,3 @@ if nodp and dp:
     print(f"{'Member/Non-member':<25} {nodp['loss_gap']:>10.4f} {dp['loss_gap']:>10.4f} {dp['loss_gap']-nodp['loss_gap']:>+10.4f}")
     print(f"{'  loss gap':<25}")
     print("-" * 55)
-
-    if dp['auc'] < 0.52 and nodp['auc'] > 0.52:
-        print("\n✓ DP-SGD effectively neutralizes the membership inference attack.")
-        print(f"  Without DP, AUC = {nodp['auc']:.4f} (attack works)")
-        print(f"  With DP,    AUC = {dp['auc']:.4f} (attack ~random)")
-    elif dp['auc'] >= 0.52:
-        print(f"\n⚠ DP reduces but does not eliminate the attack (AUC {dp['auc']:.4f}).")
-        print(f"  Consider increasing noise_multiplier or reducing epochs.")
-    else:
-        print(f"\n? Unexpected: no-DP attack also weak (AUC {nodp['auc']:.4f}).")
-        print(f"  The model may not be memorizing enough for MIA to work.")

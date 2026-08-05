@@ -1,3 +1,14 @@
+"""
+Flower FL client.
+
+Each client gets a disjoint partition of the training data.
+
+Usage:
+    python federated/client.py --client-id 0
+    python federated/client.py --client-id 1
+    python federated/client.py --client-id 2
+"""
+
 import sys
 import os
 import argparse
@@ -11,20 +22,19 @@ import torch.optim as optim
 import numpy as np
 
 from models.model import TargetModel
-from utils.data_loader import load_data
+from utils.data_loader import load_data, get_input_dim
+from utils.config import LR
 
 
 NUM_CLIENTS = 3
 LOCAL_EPOCHS = 5
-LR = 0.001
+INPUT_DIM = get_input_dim()
 
 
 def partition_data(X_train, y_train, num_clients, client_id):
-
+    """Split training data into disjoint partitions."""
     n = len(X_train)
     indices = list(range(n))
-
-    # Deterministic partition
     np.random.RandomState(42).shuffle(indices)
 
     chunk_size = n // num_clients
@@ -39,20 +49,20 @@ class FlowerClient(fl.client.NumPyClient):
 
     def __init__(self, client_id):
         self.client_id = client_id
-        self.model = TargetModel(input_dim=30)
+        self.model = TargetModel(input_dim=INPUT_DIM)
         self.criterion = nn.BCELoss()
         self.optimizer = optim.Adam(self.model.parameters(), lr=LR)
 
         X_train, X_test, y_train, y_test = load_data()
 
-        # Each client gets its own partition
         self.X_train, self.y_train = partition_data(
             X_train, y_train, NUM_CLIENTS, client_id
         )
         self.X_test = X_test
         self.y_test = y_test
 
-        print(f"Client {client_id}: {len(self.X_train)} training samples")
+        print(f"Client {client_id}: {len(self.X_train)} training samples, "
+              f"{len(self.X_test)} test samples, input_dim={INPUT_DIM}")
 
     def get_parameters(self, config):
         return [val.cpu().numpy() for val in self.model.state_dict().values()]
@@ -64,8 +74,6 @@ class FlowerClient(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
-
-        # Reset optimizer after receiving new parameters
         self.optimizer = optim.Adam(self.model.parameters(), lr=LR)
 
         for epoch in range(LOCAL_EPOCHS):

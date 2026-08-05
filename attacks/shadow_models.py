@@ -1,3 +1,15 @@
+"""
+Shadow model training for Membership Inference Attack.
+
+Supports two modes:
+  --no-dp   : Train without DP (baseline)
+  --dp      : Train with DP-SGD matching target
+
+Usage:
+    python attacks/shadow_models.py --no-dp
+    python attacks/shadow_models.py --dp
+"""
+
 import sys
 import os
 import argparse
@@ -14,21 +26,18 @@ from torch.utils.data import TensorDataset, DataLoader
 from sklearn.model_selection import train_test_split
 
 from models.model import TargetModel
-from utils.data_loader import get_raw_data
+from utils.data_loader import get_raw_data, get_input_dim, get_dataset_info
 from utils.config import (
     NUM_SHADOW_MODELS, SHADOW_EPOCHS_NO_DP, SHADOW_EPOCHS_DP,
-    LR, BATCH_SIZE, TEST_SIZE, INPUT_DIM,
+    LR, BATCH_SIZE, TEST_SIZE,
     NOISE_MULTIPLIER, MAX_GRAD_NORM,
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-EPOCHS_NO_DP = SHADOW_EPOCHS_NO_DP
-EPOCHS_DP = SHADOW_EPOCHS_DP
-
 
 def extract_attack_features(model, X, y):
-    
+    """Extract [prob0, prob1, loss, entropy] for each sample."""
     features = []
 
     with torch.no_grad():
@@ -61,11 +70,17 @@ def main():
     args = parser.parse_args()
 
     use_dp = args.dp
-    epochs = EPOCHS_DP if use_dp else EPOCHS_NO_DP
+    epochs = SHADOW_EPOCHS_DP if use_dp else SHADOW_EPOCHS_NO_DP
     mode_str = "WITH DP-SGD" if use_dp else "WITHOUT DP (baseline)"
     suffix = "_dp" if use_dp else "_nodp"
 
-    print(f"=== Shadow Model Training {mode_str} ===\n")
+    # Dataset info
+    info = get_dataset_info()
+    input_dim = get_input_dim()
+
+    print(f"=== Shadow Model Training {mode_str} ===")
+    print(f"Dataset: {info['name']} ({info['samples']} samples, {info['features']} features)")
+    print(f"Input dim: {input_dim}\n")
 
     X_all, y_all = get_raw_data()
 
@@ -91,7 +106,7 @@ def main():
         dataset = TensorDataset(X_train, y_train)
         loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-        model = TargetModel(input_dim=INPUT_DIM).to(device)
+        model = TargetModel(input_dim=input_dim).to(device)
         criterion = nn.BCELoss()
         optimizer = optim.Adam(model.parameters(), lr=LR)
 

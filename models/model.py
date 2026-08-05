@@ -1,10 +1,19 @@
+"""
+Shared model architectures.
+Used by: target model training, shadow models, FL clients.
+"""
+
 import torch.nn as nn
 
 
 class TargetModel(nn.Module):
+    """
+    Binary classifier.
+    Deliberately overparameterized to encourage memorization,
+    which makes membership inference attacks more effective.
+    """
 
-
-    def __init__(self, input_dim=30):
+    def __init__(self, input_dim):
         super().__init__()
 
         self.network = nn.Sequential(
@@ -29,7 +38,11 @@ class TargetModel(nn.Module):
 
 
 class AttackModel(nn.Module):
-
+    """
+    MIA attack classifier.
+    Takes attack features (prob0, prob1, loss, entropy) and predicts
+    member (1) vs non-member (0).
+    """
 
     def __init__(self, input_dim=4):
         super().__init__()

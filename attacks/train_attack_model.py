@@ -1,3 +1,11 @@
+"""
+Train and evaluate MIA attack classifiers.
+
+Usage:
+    python attacks/train_attack_model.py --no-dp
+    python attacks/train_attack_model.py --dp
+"""
+
 import sys
 import os
 import argparse
@@ -19,7 +27,6 @@ from models.model import AttackModel
 def report_metrics(y_true, scores, name):
     predicted = (scores > 0.5).astype(float)
     acc = accuracy_score(y_true, predicted)
-
     try:
         auc = roc_auc_score(y_true, scores)
     except ValueError:
@@ -40,8 +47,8 @@ def report_metrics(y_true, scores, name):
 def main():
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--dp", action="store_true", help="Load DP attack features")
-    group.add_argument("--no-dp", action="store_true", help="Load non-DP attack features")
+    group.add_argument("--dp", action="store_true")
+    group.add_argument("--no-dp", action="store_true")
     args = parser.parse_args()
 
     suffix = "_dp" if args.dp else "_nodp"
@@ -49,13 +56,11 @@ def main():
 
     print(f"=== MIA Attack Evaluation — {mode_str} ===\n")
 
-    # Load attack dataset
     feat_path = f"experiments/attack_features{suffix}.npy"
     label_path = f"experiments/attack_labels{suffix}.npy"
 
     if not os.path.exists(feat_path):
         print(f"ERROR: {feat_path} not found.")
-        print(f"Run: python attacks/shadow_models.py {'--dp' if args.dp else '--no-dp'}")
         sys.exit(1)
 
     X = np.load(feat_path)
@@ -64,7 +69,7 @@ def main():
     print(f"Raw dataset: {len(X)} samples "
           f"({y.sum():.0f} members, {len(y) - y.sum():.0f} non-members)")
 
-    # Balance classes
+    # Balance
     member_idx = np.where(y == 1)[0]
     nonmember_idx = np.where(y == 0)[0]
     min_size = min(len(member_idx), len(nonmember_idx))
@@ -76,39 +81,30 @@ def main():
     perm = np.random.RandomState(42).permutation(len(balanced_idx))
     balanced_idx = balanced_idx[perm]
 
-    X_bal = X[balanced_idx]
-    y_bal = y[balanced_idx]
-
+    X_bal, y_bal = X[balanced_idx], y[balanced_idx]
     print(f"Balanced dataset: {len(X_bal)} samples")
 
-    # Train/test split
     X_train, X_test, y_train, y_test = train_test_split(
         X_bal, y_bal, test_size=0.3, random_state=42, stratify=y_bal
     )
 
-   
-    # Attack 1: Loss-threshold baseline
-    # ============================================================
+    # Attack 1: Loss threshold
     loss_scores_test = -X_test[:, 2]
     loss_min, loss_max = loss_scores_test.min(), loss_scores_test.max()
     loss_scores_norm = (loss_scores_test - loss_min) / (loss_max - loss_min + 1e-10)
     report_metrics(y_test, loss_scores_norm, "Attack 1: Loss Threshold")
 
-   
     # Attack 2: Random Forest
-    # ============================================================
     rf = RandomForestClassifier(
         n_estimators=200, max_depth=5,
         random_state=42, class_weight='balanced'
     )
     rf.fit(X_train, y_train)
     rf_probs = rf.predict_proba(X_test)[:, 1]
-    rf_auc = report_metrics(y_test, rf_probs, "Attack 2: Random Forest")
+    report_metrics(y_test, rf_probs, "Attack 2: Random Forest")
     print(f"  Feature importances: {dict(zip(['prob0','prob1','loss','entropy'], rf.feature_importances_.round(3)))}")
 
-   
     # Attack 3: Neural Network
-    # ============================================================
     X_train_t = torch.tensor(X_train, dtype=torch.float32)
     y_train_t = torch.tensor(y_train, dtype=torch.float32)
     X_test_t = torch.tensor(X_test, dtype=torch.float32)
@@ -123,7 +119,6 @@ def main():
         loss = criterion(outputs, y_train_t)
         loss.backward()
         optimizer.step()
-
         if epoch % 50 == 0:
             print(f"  NN Epoch {epoch} Loss: {loss.item():.4f}")
 
@@ -131,7 +126,6 @@ def main():
         nn_preds = model(X_test_t).squeeze().numpy()
     report_metrics(y_test, nn_preds, "Attack 3: Neural Network")
 
-    # --- Save ---
     torch.save(model.state_dict(), f"experiments/attack_model{suffix}.pt")
     print(f"\nAttack model saved to experiments/attack_model{suffix}.pt")
 

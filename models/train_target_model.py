@@ -1,3 +1,10 @@
+"""
+Train the target model with DP-SGD (Opacus).
+
+This is the model that the MIA will try to attack.
+Deliberately overparameterized + small training set = memorization.
+"""
+
 import sys
 import os
 
@@ -10,16 +17,25 @@ from torch.utils.data import TensorDataset, DataLoader
 from opacus import PrivacyEngine
 
 from models.model import TargetModel
-from utils.data_loader import load_data
+from utils.data_loader import load_data, get_input_dim, get_dataset_info
 from utils.config import (
     TARGET_EPOCHS as EPOCHS, BATCH_SIZE, LR,
-    NOISE_MULTIPLIER, MAX_GRAD_NORM, DP_DELTA, INPUT_DIM,
+    NOISE_MULTIPLIER, MAX_GRAD_NORM, DP_DELTA,
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# --- Dataset info ---
+info = get_dataset_info()
+input_dim = get_input_dim()
 
-# Data
+print(f"Dataset: {info['name']}")
+print(f"  Total samples: {info['samples']}, Features: {info['features']}")
+print(f"  Positive rate: {info['positive_rate']*100:.1f}%")
+print(f"  Input dim: {input_dim}")
+print()
+
+# --- Data ---
 X_train, X_test, y_train, y_test = load_data()
 print(f"Training samples: {len(X_train)}, Test samples: {len(X_test)}")
 
@@ -31,9 +47,8 @@ y_test = y_test.to(device)
 dataset = TensorDataset(X_train, y_train)
 train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-
-# Model + DP
-model = TargetModel(input_dim=INPUT_DIM).to(device)
+# --- Model + DP ---
+model = TargetModel(input_dim=input_dim).to(device)
 criterion = nn.BCELoss()
 optimizer = optim.Adam(model.parameters(), lr=LR)
 
@@ -46,8 +61,7 @@ model, optimizer, train_loader = privacy_engine.make_private(
     max_grad_norm=MAX_GRAD_NORM,
 )
 
-
-# Training
+# --- Training ---
 for epoch in range(EPOCHS):
     for X_batch, y_batch in train_loader:
         optimizer.zero_grad()
@@ -59,8 +73,7 @@ for epoch in range(EPOCHS):
     if epoch % 10 == 0:
         print(f"Epoch {epoch} Loss: {loss.item():.4f}")
 
-
-# Evaluation
+# --- Evaluation ---
 with torch.no_grad():
     predictions = model(X_test).squeeze()
     predicted = (predictions > 0.5).float()
@@ -71,10 +84,11 @@ print(f"Test Accuracy: {accuracy:.4f}")
 epsilon = privacy_engine.get_epsilon(delta=DP_DELTA)
 print(f"Privacy budget: ε = {epsilon:.2f}, δ = {DP_DELTA}")
 
-
-# Save
+# --- Save ---
 os.makedirs("experiments", exist_ok=True)
 torch.save(model.state_dict(), "experiments/target_model.pt")
-torch.save(predictions, "experiments/predictions.pt")
+
+# Save input_dim for later loading
+torch.save({"input_dim": input_dim}, "experiments/model_config.pt")
 
 print("Target model saved.")
